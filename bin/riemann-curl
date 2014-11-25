@@ -1,0 +1,40 @@
+#!/usr/bin/env ruby
+
+require 'riemann/tools'
+
+class Riemann::Tools::Curl
+    include Riemann::Tools
+    require 'curb'
+    require 'uri'
+
+    opt :uri, "URL for sending request", :default => 'http://riemann.io'
+    opt :max_time, "Timeout for whole operation", :default => 5
+    opt :connect_timeout, "Timeout for connection phase", :default => 2
+
+    CURL_METRICS = ['total_time', 'name_lookup_time', 'connect_time', 'pre_transfer_time', 'start_transfer_time']
+
+    def tick
+        response = ::Curl::Easy.perform(opts[:uri]) do |curl| 
+            curl.headers["User-Agent"] = "riemann-curl"
+            curl.timeout = opts[:max_time]
+            curl.connect_timeout = opts[:connect_timeout]
+            curl.follow_location = true
+        end
+
+        CURL_METRICS.each do |metric|
+            value = response.send(metric)
+            data = {
+                :host    => URI.parse(opts[:uri]).host,
+                :service => "curl #{metric}",
+                :metric  => value.to_s,
+                :tags    => ['curl'],
+                :state   => 'ok'
+            }
+            report(data)
+        end
+    end
+
+end
+
+Riemann::Tools::Curl.run
+
